@@ -1,0 +1,44 @@
+package com.bfroot.tool;
+
+public class BfGprsObject 
+{
+	/*短信中心号码*/
+	public String scn = null;
+			
+	/*总流量*/
+	public String gprs = null;
+	
+	/*已使用流量*/
+	public String gprscost = null;
+
+	public String getGprs()
+	{
+		return gprs;
+	}
+
+	public void setGprs(String gprs)
+	{
+		this.gprs = gprs;
+	}
+
+	public String getGprscost() 
+	{
+		return gprscost;
+	}
+
+	public void setGprscost(String gprscost) 
+	{
+		this.gprscost = gprscost;
+	}
+
+	public String getScn() 
+	{
+		return scn;
+	}
+
+	public void setScn(String scn)
+	{
+		this.scn = scn;
+	}
+	
+}

