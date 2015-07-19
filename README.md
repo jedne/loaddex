@@ -1,2 +1,4 @@
 # loaddex
 android 动态加载dex
+
+工作原理：首先把需要动态加载的部分导出jar，然后用sdk中的命令把jar编译成dex的jar，在代码中用classloader来加载编译好的jar就可以了，在原始包中如果要调用dex中的方法，需要用反射的方式调用，而dex中的方法则可以直接调用原始包中的方法。
